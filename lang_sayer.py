@@ -5,6 +5,7 @@ import threading
 from win32com.client import Dispatch
 import pythoncom
 import argparse
+import logging
 
 # Constants
 COOLDOWN_DURATION = 10  # Cooldown duration in seconds
@@ -12,6 +13,13 @@ COOLDOWN_DURATION = 10  # Cooldown duration in seconds
 LANGUAGE_NAMES = {
     0x0409: "English",   # English - United States
     0x040D: "Hebrew",    # Hebrew
+    0x041F: "Russian",   # Russian
+    0x040C: "French",    # French
+    0x0410: "Italian",   # Italian
+    0x0411: "Japanese",  # Japanese
+    0x0412: "Korean",    # Korean
+    0x0416: "Portuguese",# Portuguese
+    0x0419: "Russian",   # Russian
     # Add more language IDs and their names as needed
 }
 
@@ -23,19 +31,27 @@ class LanguageDetector:
         self.speak_lock = threading.Lock()
         self.speak_engine = Dispatch("SAPI.SpVoice")
 
-    def debug_print(self, message):
-        if self.debug:
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{timestamp}] [DEBUG] {message}")
+        # Configure logging
+        self.logger = logging.getLogger("LanguageDetector")
+        self.logger.setLevel(logging.DEBUG if debug else logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+        # Console handler
+        ch = logging.StreamHandler()
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
 
     def speak_language(self, language):
         current_time = time.time()
         if self.current_language != language or self.last_key_press_times[1] - self.last_key_press_times[0] >= COOLDOWN_DURATION:
             self.current_language = language
-            pythoncom.CoInitialize()
-            with self.speak_lock:
-                self.speak_engine.Speak(language)
-            self.debug_print(f"Speaking language: {language}")
+            try:
+                pythoncom.CoInitialize()
+                with self.speak_lock:
+                    self.speak_engine.Speak(language)
+                self.logger.debug(f"Speaking language: {language}")
+            except Exception as e:
+                self.logger.error(f"Error while speaking: {e}")
 
     def get_keyboard_layout_language(self):
         user32 = ctypes.windll.user32
@@ -49,15 +65,13 @@ class LanguageDetector:
         if event.event_type == keyboard.KEY_UP:
             self.last_key_press_times[0] = self.last_key_press_times[1]
             self.last_key_press_times[1] = time.time()
-            self.update_history_window(event.name)  # Pass the detected key to the function
-
-    def update_history_window(self, key_name):
-        language_display = self.get_keyboard_layout_language()
-        self.speak_language(language_display)
-        self.debug_print(f"Detected language: {language_display}, Key: {key_name}")  # Include the detected key
+            
+            language_display = self.get_keyboard_layout_language()
+            self.speak_language(language_display)
+            self.logger.debug(f"Detected language: {language_display}")
 
     def start(self):
-        self.debug_print("Language detector started")
+        self.logger.debug("Language detector started")
         keyboard.hook(self.key_event)
         keyboard.wait()
 
@@ -65,6 +79,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Language Detector")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
+
+    # Configure logging
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s')
 
     detector = LanguageDetector(debug=args.debug)
     detector.start()
